@@ -25,6 +25,9 @@ jobs:
   download-and-release:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: write
+
     steps:
       - name: Download file
         shell: bash
@@ -34,30 +37,37 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Downloading ${DOWNLOAD_URL}"
+          # Keep the asset in the workspace and avoid unexpected path behavior.
+          FILE_PATH="${GITHUB_WORKSPACE}/${FILE_NAME}"
+
+          echo "Downloading ${DOWNLOAD_URL} to ${FILE_PATH}"
           curl \
             --fail \
             --location \
             --silent \
             --show-error \
+            --retry 3 \
             "${DOWNLOAD_URL}" \
-            --output "${FILE_NAME}"
+            --output "${FILE_PATH}"
 
-          test -s "${FILE_NAME}"
-          echo "Downloaded ${FILE_NAME}"
+          test -s "${FILE_PATH}"
+          ls -lh "${FILE_PATH}"
+          echo "Downloaded ${FILE_PATH}"
 
       - name: Create release if necessary
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
 
-          if gh release view "${TAG}" >/dev/null 2>&1; then
+          if gh release view "$TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
             echo "Release ${TAG} already exists"
           else
-            gh release create "${TAG}" \
+            gh release create "$TAG" \
+              --repo "$REPOSITORY" \
               --title "Release ${TAG}" \
               --notes "Created by GitHub Actions"
           fi
@@ -65,10 +75,18 @@ jobs:
       - name: Upload file to release
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
           FILE_NAME: ${{ inputs.file_name }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
 
-          gh release upload "${TAG}" "${FILE_NAME}" --clobber
+          FILE_PATH="${GITHUB_WORKSPACE}/${FILE_NAME}"
+
+          test -f "$FILE_PATH"
+          ls -lh "$FILE_PATH"
+
+          gh release upload "$TAG" "$FILE_PATH" \
+            --repo "$REPOSITORY" \
+            --clobber
