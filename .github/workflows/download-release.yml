@@ -1,0 +1,74 @@
+name: Download file and attach to release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v1.0.0"
+        required: true
+        default: "v1.0.0"
+
+      url:
+        description: "URL of the file to download"
+        required: true
+        default: "https://getmonero.org/downloads/hashes.txt"
+
+      file_name:
+        description: "Name of the release asset"
+        required: true
+        default: "hashes.txt"
+
+permissions:
+  contents: write
+
+jobs:
+  download-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download file
+        shell: bash
+        env:
+          DOWNLOAD_URL: ${{ inputs.url }}
+          FILE_NAME: ${{ inputs.file_name }}
+        run: |
+          set -euo pipefail
+
+          echo "Downloading ${DOWNLOAD_URL}"
+          curl \
+            --fail \
+            --location \
+            --silent \
+            --show-error \
+            "${DOWNLOAD_URL}" \
+            --output "${FILE_NAME}"
+
+          test -s "${FILE_NAME}"
+          echo "Downloaded ${FILE_NAME}"
+
+      - name: Create release if necessary
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists"
+          else
+            gh release create "${TAG}" \
+              --title "Release ${TAG}" \
+              --notes "Created by GitHub Actions"
+          fi
+
+      - name: Upload file to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          FILE_NAME: ${{ inputs.file_name }}
+        run: |
+          set -euo pipefail
+
+          gh release upload "${TAG}" "${FILE_NAME}" --clobber
